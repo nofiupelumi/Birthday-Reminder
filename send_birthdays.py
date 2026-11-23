@@ -5,7 +5,7 @@ send_birthdays.py
 This script automates staff birthday reminders.
 
 In simple terms, it does three big things:
-1) Gets birthday data (from SharePoint if available, otherwise from a local CSV file)
+1) Gets birthday data (from SharePoint/Google Sheets if available, otherwise from a local CSV file)
 2) Figures out who has birthdays in the reminder windows (10, 5, 2, or 0 days from today)
 3) Sends HR an email summary
 """
@@ -130,17 +130,33 @@ def today_date():
     return datetime.datetime.utcnow().date()
 
 
+def normalize_workbook_url(url: str) -> str:
+    # Convert a Google Sheets share URL into a direct downloadable Excel export URL.
+    if "docs.google.com" in url and "/spreadsheets/d/" in url:
+        m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
+        if not m:
+            raise RuntimeError("Google Sheets URL is missing a spreadsheet id.")
+        sheet_id = m.group(1)
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+    # Non-Google URLs are returned unchanged (e.g., SharePoint links).
+    return url
+
+
 def download_sharepoint_excel(url: str, timeout: int = 30):
     # Guard against missing/empty URL input.
     if not url:
         raise ValueError("SHAREPOINT_URL is empty")
 
+    # Normalize known share links (Google Sheets) to direct file-download URLs.
+    resolved_url = normalize_workbook_url(url)
+    print("Resolved workbook URL:", resolved_url)
+
     # Attempt direct HTTP download.
-    response = requests.get(url, allow_redirects=True, timeout=timeout)
+    response = requests.get(resolved_url, allow_redirects=True, timeout=timeout)
     # Print request diagnostics to help troubleshooting.
-    print("SharePoint HTTP status:", response.status_code)
-    print("SharePoint Content-Type:", response.headers.get("Content-Type"))
-    print("SharePoint final URL:", response.url)
+    print("Workbook HTTP status:", response.status_code)
+    print("Workbook Content-Type:", response.headers.get("Content-Type"))
+    print("Workbook final URL:", response.url)
 
     # Any non-200 response means the file was not retrieved successfully.
     if response.status_code != 200:
@@ -150,11 +166,11 @@ def download_sharepoint_excel(url: str, timeout: int = 30):
     content_type = response.headers.get("Content-Type", "").lower()
     if "html" in content_type or "text/plain" in content_type:
         raise RuntimeError(
-            "URL did not return an Excel file. It likely returned an HTML login page or SharePoint landing page."
+            "URL did not return an Excel file. It likely returned an HTML login page or sharing landing page."
         )
 
     # Warn if content type looks unusual, but continue in case server is generic.
-    if "excel" not in content_type and "octet-stream" not in content_type and "xlsx" not in content_type and "zip" not in content_type:
+    if "excel" not in content_type and "spreadsheetml" not in content_type and "octet-stream" not in content_type and "xlsx" not in content_type and "zip" not in content_type:
         # Still allow it in case the file is valid but headers are not descriptive.
         print("Warning: unexpected content type for an Excel file. Continuing anyway.")
 
@@ -348,6 +364,8 @@ def main():
     hr_email = os.environ.get("HR_EMAIL", DEFAULT_HR_EMAIL)
     # Optional SharePoint workbook URL.
     sharepoint_url = os.environ.get("SHAREPOINT_URL")
+    # Optional Google Sheets sharing URL.
+    google_sheet_url = os.environ.get("GOOGLE_SHEET_URL")
 
     # If email credentials are missing, stop gracefully.
     if not gmail_user or not gmail_pass:
@@ -357,26 +375,28 @@ def main():
     # Will hold birthday records once loaded.
     rows = []
 
-    # Prefer SharePoint source when URL is provided.
-    if sharepoint_url:
-        print("Attempting to use SHAREPOINT_URL")
+    # Prefer remote workbook source when URL is provided.
+    source_url = sharepoint_url or google_sheet_url
+    source_label = "SHAREPOINT_URL" if sharepoint_url else "GOOGLE_SHEET_URL"
+    if source_url:
+        print(f"Attempting to use {source_label}")
         try:
-            # Download workbook file from SharePoint.
-            workbook_path = download_sharepoint_excel(sharepoint_url)
+            # Download workbook file from the configured source URL.
+            workbook_path = download_sharepoint_excel(source_url)
             # Parse workbook rows into normalized structure.
             rows = read_birthdays_from_excel(workbook_path)
-            print(f"Parsed {len(rows)} rows from SharePoint workbook.")
+            print(f"Parsed {len(rows)} rows from workbook source.")
             # Clean up temporary file after successful parse.
             os.remove(workbook_path)
         except Exception as e:
-            # If SharePoint path fails for any reason, fallback to CSV.
+            # If workbook source fails for any reason, fallback to CSV.
             print("Excel download/parse failed:", str(e))
             print("Falling back to local CSV...")
             try:
                 rows = read_birthdays_from_csv(CSV_PATH)
                 print(f"Parsed {len(rows)} rows from CSV fallback.")
             except FileNotFoundError:
-                # Neither SharePoint worked nor CSV exists.
+                # Neither workbook URL nor CSV exists.
                 print(f"{CSV_PATH} not found. Exiting.")
                 sys.exit(1)
     else:
@@ -386,7 +406,7 @@ def main():
             print(f"Parsed {len(rows)} rows from CSV.")
         except FileNotFoundError:
             # No data source available at all.
-            print(f"{CSV_PATH} not found and SHAREPOINT_URL not set. Exiting.")
+            print(f"{CSV_PATH} not found and no remote workbook URL is set. Exiting.")
             sys.exit(1)
 
     # Determine "today" date using timezone logic.

@@ -34,4 +34,5 @@ jobs:
           HR_EMAIL: ${{ secrets.HR_EMAIL || 'hr@riskcontrolnigeria.com' }}
           TZ: ${{ secrets.TIMEZONE || 'Africa/Lagos' }}
           SHAREPOINT_URL: ${{ secrets.SHAREPOINT_URL }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
         run: python send_birthdays.py
