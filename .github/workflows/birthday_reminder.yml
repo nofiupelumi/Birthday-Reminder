@@ -34,4 +34,7 @@ jobs:
           HR_EMAIL: ${{ secrets.HR_EMAIL || 'hr@riskcontrolnigeria.com' }}
           TZ: ${{ secrets.TIMEZONE || 'Africa/Lagos' }}
           SHAREPOINT_URL: ${{ secrets.SHAREPOINT_URL }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: python send_birthdays.py

@@ -10,6 +10,7 @@ In simple terms, it does three big things:
 3) Sends HR an email summary
 """
 # Built-in CSV reader for comma-separated files.
+import base64
 import csv
 # Date/time tools for parsing dates and calculating day differences.
 import datetime
@@ -130,12 +131,8 @@ def today_date():
     return datetime.datetime.utcnow().date()
 
 
-def download_sharepoint_excel(url: str, timeout: int = 30):
-    # Guard against missing/empty URL input.
-    if not url:
-        raise ValueError("SHAREPOINT_URL is empty")
-
-    # Attempt direct HTTP download.
+def _download_sharepoint_excel_direct(url: str, timeout: int = 30):
+    # Attempt direct HTTP download (works for publicly accessible links).
     response = requests.get(url, allow_redirects=True, timeout=timeout)
     # Print request diagnostics to help troubleshooting.
     print("SharePoint HTTP status:", response.status_code)
@@ -167,6 +164,102 @@ def download_sharepoint_excel(url: str, timeout: int = 30):
     print(f"Saved workbook to: {tmp_path}")
     # Return temporary file path to caller.
     return tmp_path
+
+
+def has_graph_credentials():
+    # Graph authentication needs tenant ID, app client ID, and app client secret.
+    return bool(
+        os.environ.get("AZURE_TENANT_ID")
+        and os.environ.get("AZURE_CLIENT_ID")
+        and os.environ.get("AZURE_CLIENT_SECRET")
+    )
+
+
+def get_graph_access_token(timeout: int = 30):
+    # Read app credentials from environment.
+    tenant_id = os.environ.get("AZURE_TENANT_ID")
+    client_id = os.environ.get("AZURE_CLIENT_ID")
+    client_secret = os.environ.get("AZURE_CLIENT_SECRET")
+    if not tenant_id or not client_id or not client_secret:
+        raise RuntimeError("Missing AZURE_TENANT_ID, AZURE_CLIENT_ID, or AZURE_CLIENT_SECRET")
+
+    # Request a Graph token via OAuth2 client credentials flow.
+    token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "https://graph.microsoft.com/.default",
+    }
+    response = requests.post(token_url, data=data, timeout=timeout)
+    if response.status_code != 200:
+        raise RuntimeError(f"Token request failed ({response.status_code}): {response.text[:500]}")
+
+    token = response.json().get("access_token")
+    if not token:
+        raise RuntimeError("Token response did not include access_token")
+    return token
+
+
+def to_graph_share_id(url: str):
+    # Graph share IDs use base64url encoding with no "=" padding and "u!" prefix.
+    encoded = base64.urlsafe_b64encode(url.encode("utf-8")).decode("utf-8").rstrip("=")
+    return f"u!{encoded}"
+
+
+def download_sharepoint_excel_via_graph(url: str, timeout: int = 30):
+    # Acquire Graph access token.
+    token = get_graph_access_token(timeout=timeout)
+    share_id = to_graph_share_id(url)
+    graph_url = f"https://graph.microsoft.com/v1.0/shares/{share_id}/driveItem/content"
+    headers = {}
+    headers["Authorization"] = "Bearer " + token
+
+    # Download the file content through Graph.
+    response = requests.get(graph_url, headers=headers, allow_redirects=True, timeout=timeout)
+    print("Graph HTTP status:", response.status_code)
+    print("Graph Content-Type:", response.headers.get("Content-Type"))
+    print("Graph final URL:", response.url)
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Graph download failed with status {response.status_code}: {response.text[:500]}")
+
+    content_type = response.headers.get("Content-Type", "").lower()
+    if "html" in content_type or "text/plain" in content_type:
+        raise RuntimeError("Graph returned non-file content instead of an Excel file.")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp.write(response.content)
+        tmp_path = tmp.name
+
+    print(f"Saved workbook to: {tmp_path}")
+    return tmp_path
+
+
+def download_sharepoint_excel(url: str, timeout: int = 30):
+    # Guard against missing/empty URL input.
+    if not url:
+        raise ValueError("SHAREPOINT_URL is empty")
+
+    direct_error = None
+    try:
+        return _download_sharepoint_excel_direct(url, timeout=timeout)
+    except Exception as e:
+        direct_error = e
+        print("Direct SharePoint download failed:", str(e))
+
+    # If direct access fails, try authenticated Graph download when credentials exist.
+    if has_graph_credentials():
+        print("Attempting authenticated Microsoft Graph download...")
+        try:
+            return download_sharepoint_excel_via_graph(url, timeout=timeout)
+        except Exception as e:
+            raise RuntimeError(f"Direct download failed ({direct_error}); Graph download failed ({e})")
+
+    raise RuntimeError(
+        f"Direct download failed ({direct_error}). "
+        "To use authenticated SharePoint download, set AZURE_TENANT_ID, AZURE_CLIENT_ID, and AZURE_CLIENT_SECRET."
+    )
 
 
 def read_birthdays_from_csv(csv_path=CSV_PATH):
