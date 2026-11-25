@@ -6,7 +6,7 @@ on:
   # Run automatically on a cron schedule.
   schedule:
     # Cron is in UTC: this runs every day at 08:00 UTC.
-    - cron: "50 12 * * *"
+    - cron: "02 12 * * *"
   # Also allow manual execution from the Actions tab.
   workflow_dispatch:
 
