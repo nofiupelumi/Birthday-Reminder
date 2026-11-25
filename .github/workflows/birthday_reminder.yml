@@ -1,38 +1,69 @@
+# Human-readable workflow name shown in GitHub Actions UI.
 name: Daily Birthday Reminder
 
+# Defines how this workflow is triggered.
 on:
+  # Run automatically on a cron schedule.
   schedule:
+    # Cron is in UTC: this runs every day at 08:00 UTC.
     - cron: "0 8 * * *"
+  # Also allow manual execution from the Actions tab.
   workflow_dispatch:
 
+# Permissions granted to the workflow token.
 permissions:
+  # Read-only access to repository contents is enough for checkout.
   contents: read
 
+# Group of jobs executed by this workflow.
 jobs:
+  # Job identifier.
   send-birthday-reminder:
+    # Use the latest Ubuntu runner provided by GitHub.
     runs-on: ubuntu-latest
+    # Stop the job if it runs longer than 10 minutes.
     timeout-minutes: 10
 
+    # Ordered list of steps in this job.
     steps:
+      # Step label shown in Actions logs.
       - name: Check out repository
+        # Pull repository code into the runner workspace.
         uses: actions/checkout@v4
 
+      # Step label shown in Actions logs.
       - name: Set up Python
+        # Install and configure Python on the runner.
         uses: actions/setup-python@v5
+        # Inputs for setup-python action.
         with:
+          # Python version required by this project.
           python-version: "3.11"
 
+      # Step label shown in Actions logs.
       - name: Install dependencies
+        # Run shell commands to install required Python packages.
         run: |
+          # Upgrade pip to the latest version first.
           python -m pip install --upgrade pip
+          # Install runtime libraries needed by the script.
           pip install requests pandas openpyxl
 
+      # Step label shown in Actions logs.
       - name: Send birthday reminder
+        # Environment variables available only to this step.
         env:
+          # Gmail sender account email address.
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          # Gmail App Password used for SMTP authentication.
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          # HR recipient email; fallback default is used if secret is empty.
           HR_EMAIL: ${{ secrets.HR_EMAIL || 'hr@riskcontrolnigeria.com' }}
+          # Time zone used by the script when computing today's date.
           TZ: ${{ secrets.TIMEZONE || 'Africa/Lagos' }}
+          # Optional SharePoint workbook URL.
           SHAREPOINT_URL: ${{ secrets.SHAREPOINT_URL }}
+          # Optional Google Sheets sharing URL.
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+        # Execute the birthday reminder script.
         run: python send_birthdays.py
