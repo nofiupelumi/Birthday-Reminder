@@ -50,7 +50,7 @@ except Exception:
 # Default path to local fallback birthday data.
 CSV_PATH = "birthdays.csv"
 # Default HR recipient if HR_EMAIL env var is not provided.
-DEFAULT_HR_EMAIL = "hr@riskcontrolnigeria.com"
+DEFAULT_HR_EMAIL = "nofiumoruf17@gmail.com"
 # Gmail SMTP server host.
 SMTP_HOST = "smtp.gmail.com"
 # SSL port for Gmail SMTP.
