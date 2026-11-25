@@ -58,7 +58,7 @@ jobs:
           # Gmail App Password used for SMTP authentication.
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           # HR recipient email; fallback default is used if secret is empty.
-          HR_EMAIL: ${{ secrets.HR_EMAIL || 'hr@riskcontrolnigeria.com' }}
+          HR_EMAIL: ${{ secrets.HR_EMAIL || 'nofiumoruf17@gmail.com' }}
           # Time zone used by the script when computing today's date.
           TZ: ${{ secrets.TIMEZONE || 'Africa/Lagos' }}
           # Optional SharePoint workbook URL.
